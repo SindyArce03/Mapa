@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Mapa</title>
+        <meta charset="UTF-8">
+        <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAFA2iQjs4vcVNmFKHw-yDzMicQxekW9AY&libraries=drawing"></script>
+        <style>
+            body,
+            html {
+                height: 100%;
+                margin: 0;
+                padding: 0;
+            }
+
+            #map {
+                height: 100%;
+                width: 100%;
+            }
+
+                .controls {
+                    position: absolute;
+                    top: 10px;
+                    left: 10px;
+                    z-index: 5;
+                    background-color: white;
+                    padding: 10px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                    display: flex;
+                    flex-wrap: wrap;
+                    /* Hace que se acomoden si no caben */
+                    gap: 5px;
+                    align-items: center;
+                }
+
+                .controls input,
+                .controls button {
+                    margin: 0;
+                    width: auto;
+                }
+        </style>
+    </head>
+
+    <body onload="initMap()">
+        <div class="controls">
+            <input type="text" id="address" placeholder="Ingrese direcci&oacute;n">
+            <button onclick="searchAddress()">Buscar direcci&oacute;n</button>
+            <button onclick="enableEditing()">Editar predio</button>
+            <button onclick="deleteVertex()">Eliminar v&eacute;rtice</button>
+            <button onclick="saveShape()">Guardar predio</button>
+        </div>
+        <div id="map"></div>
+
+        <script>
+            let map, drawingManager, selectedShape, marker, infoWindow;
+
+            function initMap() {
+                map = new google.maps.Map(document.getElementById('map'), {
+                    center: { lat: 25.588167952915065, lng: -108.48892698465662 },
+                    zoom: 12
+                });
+
+                drawingManager = new google.maps.drawing.DrawingManager({
+                    drawingMode: google.maps.drawing.OverlayType.POLYGON,
+                    drawingControl: true,
+                    drawingControlOptions: {
+                        position: google.maps.ControlPosition.TOP_CENTER,
+                        drawingModes: ['polygon']
+                    }
+                });
+                drawingManager.setMap(map);
+
+                google.maps.event.addListener(drawingManager, 'overlaycomplete', function (event) {
+                    if (event.type === 'polygon') {
+                        if (selectedShape) {
+                            selectedShape.setMap(null);
+                        }
+                        selectedShape = event.overlay;
+                        let coordinates = selectedShape.getPath().getArray();
+                        console.log("Coordenadas guardadas:", coordinates);
+                    }
+                });
+
+                infoWindow = new google.maps.InfoWindow();
+            }
+
+            function enableEditing() {
+                if (selectedShape) {
+                    selectedShape.setEditable(true);
+                }
+            }
+
+            function deleteVertex() {
+                if (selectedShape) {
+                    let path = selectedShape.getPath();
+                    if (path.getLength() > 0) {
+                        path.removeAt(path.getLength() - 1);
+                    }
+                }
+            }
+
+            async function saveShape() {
+                if (selectedShape) {
+                    let coordinates = selectedShape.getPath().getArray().map(coord => ({ lat: coord.lat(), lng: coord.lng() }));
+                    console.log("Coordenadas guardadas:", coordinates);
+
+                    try {
+                        let response = await fetch('https://graph.microsoft.com/v1.0/me/drive/root:/ruta/a/tu/archivo.xlsx:/workbook/worksheets/Hoja1/range(address=\'A1\')', {
+                            method: 'PATCH',
+                            headers: {
+                                'Authorization': 'Bearer TU_TOKEN_DE_ACCESO',
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                values: coordinates.map(coord => [coord.lat, coord.lng])
+                            })
+                        });
+
+                        if (response.ok) {
+                            alert("Polígono guardado con éxito en OneDrive");
+                        } else {
+                            console.error('Error:', response.statusText);
+                            alert("Hubo un error al guardar el polígono");
+                        }
+                    } catch (error) {
+                        console.error('Error:', error);
+                        alert("Hubo un error al guardar el polígono");
+                    }
+                }
+            }
+
+            function searchAddress() {
+                let address = document.getElementById('address').value;
+                let geocoder = new google.maps.Geocoder();
+                geocoder.geocode({ 'address': address }, function (results, status) {
+                    if (status === 'OK') {
+                        map.setCenter(results[0].geometry.location);
+
+                        if (marker) {
+                            marker.setMap(null);
+                        }
+                        marker = new google.maps.Marker({
+                            map: map,
+                            position: results[0].geometry.location
+                        });
+
+                        google.maps.event.addListener(marker, 'click', function () {
+                            infoWindow.setContent(`
+                                <div>
+                                    <strong>${results[0].formatted_address}</strong><br>
+                                    Latitud: ${results[0].geometry.location.lat()}<br>
+                                    Longitud: ${results[0].geometry.location.lng()}
+                                </div>
+                            `);
+                            infoWindow.open(map, marker);
+                        });
+                    } else {
+                        alert('Geocode was not successful for the following reason: ' + status);
+                    }
+                });
+            }
+        </script>
+    </body>
+
+</html>
